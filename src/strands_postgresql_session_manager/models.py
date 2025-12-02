@@ -7,7 +7,7 @@ sessions, agents, and messages with full ACID guarantees.
 from datetime import datetime
 from typing import Optional, Dict, Any
 from sqlmodel import Field, SQLModel, Column
-from sqlalchemy import JSON
+from sqlalchemy import JSON, ForeignKey
 
 
 class SessionDB(SQLModel, table=True):
@@ -90,10 +90,9 @@ class AgentDB(SQLModel, table=True):
     
     # Composite primary key (session_id, agent_id)
     session_id: str = Field(
-        foreign_key="sessions.session_id",
-        primary_key=True,
         max_length=255,
-        description="Associated session ID"
+        description="Associated session ID",
+        sa_column=Column(ForeignKey("sessions.session_id", ondelete="CASCADE"), primary_key=True)
     )
     
     agent_id: str = Field(
@@ -167,10 +166,9 @@ class MessageDB(SQLModel, table=True):
     
     # Composite primary key (session_id, agent_id, message_id)
     session_id: str = Field(
-        foreign_key="sessions.session_id",
-        primary_key=True,
         max_length=255,
-        description="Associated session ID"
+        description="Associated session ID",
+        sa_column=Column(ForeignKey("sessions.session_id", ondelete="CASCADE"), primary_key=True)
     )
     
     agent_id: str = Field(

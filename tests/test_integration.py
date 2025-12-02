@@ -21,7 +21,7 @@ Cleanup:
 import pytest
 import os
 from datetime import datetime
-from sqlmodel import create_engine, SQLModel, Session
+from sqlmodel import create_engine, SQLModel, Session, text
 from unittest.mock import MagicMock
 
 from strands_postgresql_session_manager import (
@@ -59,11 +59,11 @@ def cleanup_database(engine):
     """Clean up database between tests."""
     yield
     
-    # Clear all data after each test
+    # Clear all data after each test (use text() for raw SQL)
     with Session(engine) as session:
-        session.exec("DELETE FROM messages")
-        session.exec("DELETE FROM agents")
-        session.exec("DELETE FROM sessions")
+        session.exec(text("DELETE FROM messages"))
+        session.exec(text("DELETE FROM agents"))
+        session.exec(text("DELETE FROM sessions"))
         session.commit()
 
 
