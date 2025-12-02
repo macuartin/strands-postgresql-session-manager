@@ -8,13 +8,12 @@ version = "0.1.0"
 description = "PostgreSQL session manager for Strands Agents SDK with full ACID guarantees"
 authors = [{name = "Miguel Cuartin Ordaz", email = "macuartin@gmail.com"}]
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.10"
 keywords = ["strands", "agents", "session-manager", "postgresql", "ai", "llm"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
