@@ -3,11 +3,9 @@
 import pytest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
-from sqlmodel import create_engine
 
 from strands.agent.conversation_manager.null_conversation_manager import NullConversationManager
 from strands.types.content import ContentBlock
-from strands.types.exceptions import SessionException
 from strands.types.session import Session, SessionAgent, SessionMessage, SessionType
 
 from strands_postgresql_session_manager import PostgresSessionManager

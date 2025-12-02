@@ -29,7 +29,6 @@ from strands_postgresql_session_manager import (
     PostgresSessionManager,
     SessionDB,
     AgentDB,
-    MessageDB,
 )
 
 
