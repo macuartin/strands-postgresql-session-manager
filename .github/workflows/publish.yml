@@ -33,6 +33,11 @@ jobs:
     
     - name: Build package
       run: python -m build
+
+    - name: Validate package metadata
+      run: |
+        pip install twine
+        python -m twine check dist/*
     
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1

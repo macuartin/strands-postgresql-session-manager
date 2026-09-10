@@ -72,7 +72,7 @@ open htmlcov/index.html  # View coverage report
 ## Test Categories
 
 ### Unit Tests (`test_unit.py`)
-- Uses in-memory SQLite database
+- Uses mocked SQLModel sessions
 - Tests all CRUD operations
 - Tests CASCADE delete behavior
 - Fast execution (~1-2 seconds)
@@ -99,12 +99,19 @@ docker rm postgres-test
 docker stop postgres-test
 ```
 
+## Database Migrations
+
+Existing `v0.1.0` PostgreSQL databases must be upgraded with Alembic:
+
+```bash
+pip install 'strands-postgresql-session-manager[migrations]'
+export DATABASE_URL="postgresql://test:test@localhost:5432/test"
+alembic -c alembic.ini upgrade head
+```
+
 ## Continuous Integration
 
-The GitHub Actions workflow (`.github/workflows/tests.yml`) runs:
-- Unit tests on every push
-- Integration tests on pull requests
-- Coverage reporting to Codecov
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs unit and integration tests, formatting, linting, type checking, and package artifact validation on every push and pull request.
 
 ## Troubleshooting
 

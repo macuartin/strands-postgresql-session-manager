@@ -6,7 +6,8 @@ CASCADE deletes, and JSONB support for flexible state storage.
 """
 
 import logging
-from typing import Optional, List, Type
+from datetime import datetime
+from typing import Any, List, Optional, Type, cast
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 
@@ -19,7 +20,7 @@ from strands.types.session import (
     SessionType,
 )
 
-from .models import SessionDB, AgentDB, MessageDB
+from .models import AgentDB, MessageDB, MultiAgentDB, SessionDB
 
 
 class PostgresSessionManager(RepositorySessionManager, SessionRepository):
@@ -67,6 +68,7 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
         session_model: Type[SessionDB] = SessionDB,
         agent_model: Type[AgentDB] = AgentDB,
         message_model: Type[MessageDB] = MessageDB,
+        multi_agent_model: Type[MultiAgentDB] = MultiAgentDB,
         logger: Optional[logging.Logger] = None,
         **kwargs,
     ):
@@ -91,6 +93,7 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
         self.SessionModel = session_model
         self.AgentModel = agent_model
         self.MessageModel = message_model
+        self.MultiAgentModel = multi_agent_model
         self.logger = logger or logging.getLogger(__name__)
 
         # Initialize parent RepositorySessionManager
@@ -133,8 +136,7 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
 
                 # Extract session_type (may be an Enum, need string value)
                 session_type_value = session_data.get("session_type")
-                if hasattr(session_type_value, "value"):
-                    session_type_value = session_type_value.value
+                session_type_value = getattr(session_type_value, "value", session_type_value)
 
                 # Create SQLModel instance
                 session_db = self.SessionModel(
@@ -215,8 +217,13 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
                 session_db = result.one_or_none()
 
                 if session_db:
-                    # Session has minimal mutable fields
-                    # updated_at is handled automatically by database
+                    session_data = session.to_dict()
+                    session_db.session_type = session_data.get(
+                        "session_type", session_db.session_type
+                    )
+                    if hasattr(session_db.session_type, "value"):
+                        session_db.session_type = session_db.session_type.value
+                    session_db.updated_at = datetime.utcnow()
                     db_session.add(session_db)
                     db_session.commit()
                     db_session.refresh(session_db)
@@ -374,7 +381,7 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
                         "conversation_manager_state", {}
                     )
                     agent_db.internal_state = agent_data.get("_internal_state", {})
-                    agent_db.updated_at = agent_data.get("updated_at")
+                    agent_db.updated_at = datetime.utcnow()
 
                     db_session.add(agent_db)
                     db_session.commit()
@@ -387,7 +394,7 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
             self.logger.error(f"Error updating agent: {e}")
             raise
 
-    def delete_agent(self, agent_id: str) -> bool:
+    def delete_agent(self, agent_id: str, session_id: Optional[str] = None) -> bool:
         """
         Delete an agent from the database.
 
@@ -402,7 +409,11 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
         """
         try:
             with Session(self.engine) as db_session:
-                statement = select(self.AgentModel).where(self.AgentModel.agent_id == agent_id)
+                statement = (
+                    select(self.AgentModel)
+                    .where(self.AgentModel.agent_id == agent_id)
+                    .where(self.AgentModel.session_id == (session_id or self.session_id))
+                )
                 result = db_session.exec(statement)
                 agent_db = result.one_or_none()
 
@@ -436,7 +447,7 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
                 statement = (
                     select(self.AgentModel)
                     .where(self.AgentModel.session_id == session_id)
-                    .order_by(self.AgentModel.created_at)
+                    .order_by(cast(Any, self.AgentModel.created_at))
                 )
                 result = db_session.exec(statement)
                 agents_db = result.all()
@@ -453,6 +464,50 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
         except Exception as e:
             self.logger.error(f"Error listing agents: {e}")
             raise
+
+    # ==================== Multi-agent Methods ====================
+
+    def create_multi_agent(self, session_id: str, multi_agent: Any, **kwargs: Any) -> None:
+        """Persist initial Graph or Swarm state for a session."""
+        with Session(self.engine) as db_session:
+            db_session.add(
+                self.MultiAgentModel(
+                    session_id=session_id,
+                    multi_agent_id=multi_agent.id,
+                    state=multi_agent.serialize_state(),
+                )
+            )
+            db_session.commit()
+
+    def read_multi_agent(
+        self, session_id: str, multi_agent_id: str, **kwargs: Any
+    ) -> Optional[dict[str, Any]]:
+        """Read persisted Graph or Swarm state."""
+        with Session(self.engine) as db_session:
+            statement = (
+                select(self.MultiAgentModel)
+                .where(self.MultiAgentModel.session_id == session_id)
+                .where(self.MultiAgentModel.multi_agent_id == multi_agent_id)
+            )
+            record = db_session.exec(statement).one_or_none()
+            return record.state if record else None
+
+    def update_multi_agent(self, session_id: str, multi_agent: Any, **kwargs: Any) -> None:
+        """Update persisted Graph or Swarm state."""
+        with Session(self.engine) as db_session:
+            statement = (
+                select(self.MultiAgentModel)
+                .where(self.MultiAgentModel.session_id == session_id)
+                .where(self.MultiAgentModel.multi_agent_id == multi_agent.id)
+            )
+            record = db_session.exec(statement).one_or_none()
+            if record is None:
+                raise ValueError(
+                    f"MultiAgent state {multi_agent.id} in session {session_id} does not exist"
+                )
+            record.state = multi_agent.serialize_state()
+            db_session.add(record)
+            db_session.commit()
 
     # ==================== Message Methods ====================
 
@@ -563,9 +618,9 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
                     message_data = session_message.to_dict()
 
                     # Update JSONB fields
-                    message_db.message = message_data.get("message")
+                    message_db.message = message_data.get("message") or {}
                     message_db.redact_message = message_data.get("redact_message")
-                    message_db.updated_at = message_data.get("updated_at")
+                    message_db.updated_at = datetime.utcnow()
 
                     db_session.add(message_db)
                     db_session.commit()
@@ -580,7 +635,9 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
             self.logger.error(f"Error updating message: {e}")
             raise
 
-    def delete_message(self, message_id: str) -> bool:
+    def delete_message(
+        self, message_id: int, agent_id: Optional[str] = None, session_id: Optional[str] = None
+    ) -> bool:
         """
         Delete a message from the database.
 
@@ -596,8 +653,11 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
         try:
             with Session(self.engine) as db_session:
                 statement = select(self.MessageModel).where(
-                    self.MessageModel.message_id == message_id
+                    self.MessageModel.message_id == message_id,
+                    self.MessageModel.session_id == (session_id or self.session_id),
                 )
+                if agent_id is not None:
+                    statement = statement.where(self.MessageModel.agent_id == agent_id)
                 result = db_session.exec(statement)
                 message_db = result.one_or_none()
 
@@ -638,7 +698,7 @@ class PostgresSessionManager(RepositorySessionManager, SessionRepository):
                     select(self.MessageModel)
                     .where(self.MessageModel.session_id == session_id)
                     .where(self.MessageModel.agent_id == agent_id)
-                    .order_by(self.MessageModel.message_id)
+                    .order_by(cast(Any, self.MessageModel.message_id))
                 )
 
                 # Apply pagination

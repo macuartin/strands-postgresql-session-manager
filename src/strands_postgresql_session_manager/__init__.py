@@ -24,12 +24,13 @@ Example:
 """
 
 from .session_manager import PostgresSessionManager
-from .models import SessionDB, AgentDB, MessageDB
+from .models import AgentDB, MessageDB, MultiAgentDB, SessionDB
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "PostgresSessionManager",
     "SessionDB",
     "AgentDB",
     "MessageDB",
+    "MultiAgentDB",
 ]

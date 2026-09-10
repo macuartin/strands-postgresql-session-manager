@@ -31,7 +31,6 @@ from strands_postgresql_session_manager import (
     AgentDB,
 )
 
-
 # Skip integration tests if DATABASE_URL not set
 pytestmark = pytest.mark.skipif(
     not os.getenv("DATABASE_URL"),

@@ -2,13 +2,14 @@
 
 A production-ready session manager for [Strands Agents](https://strandsagents.com/) that uses PostgreSQL for persistent storage. This enables agents to maintain conversation history and state with full ACID guarantees, even in distributed environments.
 
-Tested with PostgreSQL 14+ (local, RDS, Cloud SQL, Azure Database, and Supabase).
+Tested with Strands Agents 1.55.1 and PostgreSQL 14+ (local, RDS, Cloud SQL, Azure Database, and Supabase).
 
 ## Features
 
 - **Persistent Sessions**: Store agent conversations and state in PostgreSQL with full ACID guarantees
 - **Distributed Ready**: Share sessions across multiple application instances
-- **JSONB Storage**: Native JSON support for complex data structures (state, conversation manager, messages)
+- **JSONB Storage**: Native PostgreSQL JSONB support for complex data structures (state, conversation manager, messages)
+- **Multi-agent State**: Persist Graph and Swarm execution state in PostgreSQL
 - **Referential Integrity**: CASCADE deletes ensure data consistency
 - **Production Tested**: Battle-tested with 18 unit tests + 4 integration tests (100% passing)
 - **Analytics Ready**: SQL queries for conversation analysis and reporting
@@ -29,7 +30,7 @@ from sqlmodel import create_engine, SQLModel
 # Create PostgreSQL engine
 engine = create_engine("postgresql://user:password@localhost:5432/agents_db")
 
-# Create tables (run once)
+# Create tables for a new database
 SQLModel.metadata.create_all(engine)
 
 # Create session manager with unique session ID
@@ -48,6 +49,16 @@ agent("Hello! Tell me about PostgreSQL session storage.")
 # using the same session_id
 ```
 
+For an existing `v0.1.0` database, install the migration extra and run the versioned migration before starting the application:
+
+```bash
+pip install 'strands-postgresql-session-manager[migrations]'
+export DATABASE_URL="postgresql://user:password@localhost:5432/agents_db"
+alembic -c alembic.ini upgrade head
+```
+
+The migration converts state columns to PostgreSQL JSONB, adds multi-agent state, and enforces message-to-agent cascade deletes.
+
 ## Storage Structure
 
 The PostgresSessionManager stores data using the following table structure:
@@ -55,10 +66,13 @@ The PostgresSessionManager stores data using the following table structure:
 ```
 sessions (session_id PK, session_type, created_at, updated_at)
     └── agents (session_id FK, agent_id, state JSONB, conversation_manager_state JSONB, _internal_state JSONB)
-        └── messages (session_id FK, agent_id, message_id, message JSONB, redact_message JSONB)
+        ├── messages (session_id FK, agent_id FK, message_id, message JSONB, redact_message JSONB)
+    └── multi_agents (session_id FK, multi_agent_id, state JSONB)
 ```
 
 Foreign keys use `ON DELETE CASCADE` to ensure referential integrity.
+
+This package uses Strands' repository-based session API. Strands now recommends `SnapshotSessionManager` with the unified `Storage` protocol for new single-agent applications; use this package when you need PostgreSQL-backed record-level persistence or Graph/Swarm sessions.
 
 ## API Reference
 
@@ -88,6 +102,9 @@ PostgresSessionManager(
 - `read_message(session_id, agent_id, message_id)`: Retrieve message
 - `update_message(session_id, agent_id, message)`: Update message
 - `list_messages(session_id, agent_id, limit=None, offset=0)`: List all messages
+- `create_multi_agent(session_id, multi_agent)`: Store Graph or Swarm state
+- `read_multi_agent(session_id, multi_agent_id)`: Retrieve Graph or Swarm state
+- `update_multi_agent(session_id, multi_agent)`: Update Graph or Swarm state
 
 ## Contributing
 
@@ -141,7 +158,7 @@ docker stop postgres-test && docker rm postgres-test
 
 - Python 3.10+
 - PostgreSQL 14+
-- strands-agents >= 1.0.0
+- strands-agents >= 1.0.0 (tested with 1.55.1)
 - sqlmodel >= 0.0.14
 - psycopg2-binary >= 2.9.0
 

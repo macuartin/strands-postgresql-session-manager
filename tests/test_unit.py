@@ -408,4 +408,34 @@ def test_list_messages_with_pagination(postgres_manager, sample_session, sample_
         )
 
         assert len(result) == 1
-        assert result[0].message_id == 5
+    assert result[0].message_id == 5
+
+
+def test_create_multi_agent(postgres_manager):
+    """Test persisting initial multi-agent state."""
+    multi_agent = MagicMock(id="graph-1")
+    multi_agent.serialize_state.return_value = {"status": "pending"}
+    with patch("strands_postgresql_session_manager.session_manager.Session") as session_cls:
+        db_session = session_cls.return_value.__enter__.return_value
+        postgres_manager.create_multi_agent("test", multi_agent)
+        assert db_session.add.called
+        assert db_session.commit.called
+
+
+def test_read_multi_agent(postgres_manager):
+    """Test reading multi-agent state."""
+    with patch("strands_postgresql_session_manager.session_manager.Session") as session_cls:
+        db_session = session_cls.return_value.__enter__.return_value
+        record = MagicMock(state={"status": "completed"})
+        db_session.exec.return_value.one_or_none.return_value = record
+        assert postgres_manager.read_multi_agent("test", "graph-1") == {"status": "completed"}
+
+
+def test_update_multi_agent_missing_state_raises(postgres_manager):
+    """Updating an unknown multi-agent state must fail explicitly."""
+    multi_agent = MagicMock(id="graph-1")
+    with patch("strands_postgresql_session_manager.session_manager.Session") as session_cls:
+        db_session = session_cls.return_value.__enter__.return_value
+        db_session.exec.return_value.one_or_none.return_value = None
+        with pytest.raises(ValueError, match="does not exist"):
+            postgres_manager.update_multi_agent("test", multi_agent)

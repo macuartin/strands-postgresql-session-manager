@@ -6,9 +6,12 @@ sessions, agents, and messages with full ACID guarantees.
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 from sqlmodel import Field, SQLModel, Column
-from sqlalchemy import JSON, ForeignKey
+from sqlalchemy import ForeignKey, ForeignKeyConstraint, JSON
+from sqlalchemy.dialects.postgresql import JSONB
+
+JSON_STORAGE = JSON().with_variant(JSONB(), "postgresql")
 
 
 class SessionDB(SQLModel, table=True):
@@ -48,7 +51,9 @@ class SessionDB(SQLModel, table=True):
     )
 
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Last update timestamp"
+        default_factory=datetime.utcnow,
+        sa_column_kwargs={"onupdate": datetime.utcnow},
+        description="Last update timestamp",
     )
 
 
@@ -95,18 +100,18 @@ class AgentDB(SQLModel, table=True):
 
     # JSONB fields for agent state
     state: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON), description="Agent state as JSON"
+        default_factory=dict, sa_column=Column(JSON_STORAGE), description="Agent state as JSON"
     )
 
     conversation_manager_state: Dict[str, Any] = Field(
         default_factory=dict,
-        sa_column=Column(JSON),
+        sa_column=Column(JSON_STORAGE),
         description="Conversation manager state as JSON",
     )
 
     internal_state: Optional[Dict[str, Any]] = Field(
         default=None,
-        sa_column=Column("_internal_state", JSON, nullable=True),
+        sa_column=Column("_internal_state", JSON_STORAGE, nullable=True),
         description="Internal agent state as JSON",
     )
 
@@ -115,7 +120,9 @@ class AgentDB(SQLModel, table=True):
     )
 
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Last update timestamp"
+        default_factory=datetime.utcnow,
+        sa_column_kwargs={"onupdate": datetime.utcnow},
+        description="Last update timestamp",
     )
 
 
@@ -166,11 +173,13 @@ class MessageDB(SQLModel, table=True):
     )
 
     # JSONB fields for message content
-    message: Dict[str, Any] = Field(sa_column=Column(JSON), description="Message content as JSON")
+    message: Dict[str, Any] = Field(
+        sa_column=Column(JSON_STORAGE), description="Message content as JSON"
+    )
 
     redact_message: Optional[Dict[str, Any]] = Field(
         default=None,
-        sa_column=Column(JSON, nullable=True),
+        sa_column=Column(JSON_STORAGE, nullable=True),
         description="Redacted message content as JSON (optional)",
     )
 
@@ -179,5 +188,32 @@ class MessageDB(SQLModel, table=True):
     )
 
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Last update timestamp"
+        default_factory=datetime.utcnow,
+        sa_column_kwargs={"onupdate": datetime.utcnow},
+        description="Last update timestamp",
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["session_id", "agent_id"],
+            ["agents.session_id", "agents.agent_id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class MultiAgentDB(SQLModel, table=True):
+    """Persisted Graph or Swarm state associated with a session."""
+
+    __tablename__ = "multi_agents"
+
+    session_id: str = Field(
+        max_length=255,
+        sa_column=Column(ForeignKey("sessions.session_id", ondelete="CASCADE"), primary_key=True),
+    )
+    multi_agent_id: str = Field(primary_key=True, max_length=255)
+    state: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON_STORAGE))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow, sa_column_kwargs={"onupdate": datetime.utcnow}
     )
